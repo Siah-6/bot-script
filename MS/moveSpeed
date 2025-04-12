@@ -1,0 +1,79 @@
+import pyautogui
+import pytesseract
+import time
+from PIL import Image, ImageEnhance, ImageOps
+import re
+
+# Configuration - Adjust these based on your screen
+BLUE_GEM_POS = (885, 700)  # Replace with blue gem button coordinates
+CLICK_TO_SKIP_POS = (800, 450)  # Safe spot to skip animation
+SCREENSHOT_REGION = (840, 520, 290, 140)  # Extended to capture 4 stat slots
+
+# Speed stacking thresholds
+MIN_SPEED_TOTAL = 18  # Stop when total Speed (stacking) is above 18%
+SPEED_RANGE = set(range(1, 11))  # Valid individual speed stacking values (1% to 10%)
+
+# Initialize
+pyautogui.PAUSE = 0.1  # Small delay between actions
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Update path
+
+def preprocess_image(image):
+    """Enhance image for better OCR."""
+    gray = image.convert('L')
+    enhanced = ImageEnhance.Contrast(gray).enhance(3.0)
+    inverted = ImageOps.invert(enhanced)
+    bw = ImageOps.autocontrast(inverted)
+    return bw
+
+def extract_stats():
+    """Capture screen and extract speed stacking percentages."""
+    screenshot = pyautogui.screenshot(region=SCREENSHOT_REGION)
+    processed = preprocess_image(screenshot)
+
+    # OCR recognition with improved config
+    text = pytesseract.image_to_string(processed, config='--psm 6 --oem 3')
+    print(f"\U0001F4DD OCR Raw Output: {text}")  # Debugging: Print raw text
+
+    # Clean up text: replace common misreads
+    cleaned_text = text.replace('4', '+')
+    cleaned_text = re.sub(r'[^\d%a-zA-Z +()]', '', cleaned_text)
+
+    # Match patterns like +5% Speed (stacking)
+    speed_matches = re.findall(r'\+?(\d{1,2})%?\s*Speed\s*\(stacking\)', cleaned_text, re.IGNORECASE)
+    current_speed_values = [int(match) for match in speed_matches if int(match) in SPEED_RANGE]
+    return current_speed_values
+
+def should_stop(speed_values):
+    """Check if the current roll meets the speed stacking threshold."""
+    total_speed = sum(speed_values)
+    print(f"\U0001F680 Current speed stacking stats: {speed_values} (Total: {total_speed}%)")
+
+    if total_speed > MIN_SPEED_TOTAL:
+        print(f"✅ Found desired stats: {speed_values} (Total: {total_speed}%)")
+        return True
+    return False
+
+def reroll():
+    """Perform one reroll cycle."""
+    pyautogui.click(BLUE_GEM_POS)  # Click blue gem
+    time.sleep(0.3)  # Wait for animation
+    pyautogui.click(CLICK_TO_SKIP_POS)  # Skip animation
+    time.sleep(0.2)  # Brief pause
+
+def main():
+    print("Starting speed stack reroller... (Press Ctrl+C to stop)")
+    time.sleep(3)  # 3-second delay before script starts
+    try:
+        while True:
+            reroll()
+            time.sleep(0.5)  # Small delay to avoid spam clicking
+
+            speed_values = extract_stats()  # Fresh OCR per roll
+            if should_stop(speed_values):
+                break  # Stop only if the current roll meets the threshold
+
+    except KeyboardInterrupt:
+        print("\n⏹ Stopped by user.")
+
+if __name__ == "__main__":
+    main()
